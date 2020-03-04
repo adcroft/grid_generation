@@ -282,7 +282,7 @@ def generate_mercator_grid(Ni,phi_s,phi_n,lon0_M,lenlon_M,refineR,shift_equator_
     #Ensure that the equator (y=0) is included and is a u-point
     equator=0.0
     equator_index = np.searchsorted(phi_M,equator)
-    if(equator_index == 0): 
+    if (equator_index == 0) and (phi_M[0] !=0):
         raise Exception('   Ooops: Equator is not in the grid')
     else:
         print("   Equator is at j=", equator_index)

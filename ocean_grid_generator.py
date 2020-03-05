@@ -230,7 +230,7 @@ def quad_average_2d(y):
     
     raise Exception('Uncoded order')
 
-def lagrange_interp(x,y,q):
+def lagrange_interp4(x,y,q):
     """Lagrange polynomial interpolation. Retruns f(q) which f(x) passes through four data
        points at x[0..3], y[0..3]."""
     # n - numerator, d - denominator
@@ -322,7 +322,7 @@ def generate_mercator_grid(Ni,phi_s,phi_n,lon0_M,lenlon_M,refineR,shift_equator_
         q=np.arange(N_cub)
         
         if(cubic_lagrange_interp):
-            phi2 = lagrange_interp(nodes,phi_nodes,q)
+            phi2 = lagrange_interp4(nodes,phi_nodes,q)
         elif(cubic_scipy): #MIDAS 
             import scipy.interpolate
             f2=scipy.interpolate.interp1d(nodes,phi_nodes,kind='cubic')

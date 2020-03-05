@@ -428,7 +428,7 @@ def generate_displaced_pole_grid(Ni,Nj_scap,lon0,lat0,lon_dp,r_dp):
     return x,y
 
 #numerical approximation of metrics coefficients h_i and h_j
-def great_arc_distance(j0, i0, j1, i1, nx,ny ,lon0,lat0,lon_dp,r_dp):
+def displaced_pole_great_arc_distance(j0, i0, j1, i1, nx,ny ,lon0,lat0,lon_dp,r_dp):
     """Returns great arc distance between nodes (j0,i0) and (j1,i1)"""
     # https://en.wikipedia.org/wiki/Great-circle_distance
     lam0,phi0= displacedPoleCap_mesh(i0,j0, nx,ny,lon0,lat0,lon_dp,r_dp)
@@ -440,25 +440,25 @@ def great_arc_distance(j0, i0, j1, i1, nx,ny ,lon0,lat0,lon_dp,r_dp):
     d = np.sin( 0.5 * dphi)**2 + np.sin( 0.5 * dlam)**2 * np.cos(phi0) * np.cos(phi1)
     return 2. * np.arcsin( np.sqrt( d ) )
 
-def numerical_hi(j, i, nx,ny ,lon0,lat0,lon_dp,r_dp, eps, order=6):
+def displaced_pole_numerical_hi(j, i, nx,ny ,lon0,lat0,lon_dp,r_dp, eps, order=6):
     """Returns a numerical approximation to h_lambda"""
     reps = 1. / eps 
-    ds2 = great_arc_distance(j, i+eps, j, i-eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds2 = displaced_pole_great_arc_distance(j, i+eps, j, i-eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 2: return 0.5 * ds2 * reps
-    ds4 = great_arc_distance(j, i+2.*eps, j, i-2.*eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds4 = displaced_pole_great_arc_distance(j, i+2.*eps, j, i-2.*eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 4: return ( 8. * ds2 - ds4 ) * (1./12.) * reps
-    ds6 = great_arc_distance(j, i+3.*eps, j, i-3.*eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds6 = displaced_pole_great_arc_distance(j, i+3.*eps, j, i-3.*eps, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 6: return ( 45. * ds2 - 9. * ds4 + ds6 ) * (1./60.) * reps
     raise Exception('order not coded')
 
-def numerical_hj(j, i, nx,ny ,lon0,lat0,lon_dp,r_dp, eps, order=6):
+def displaced_pole_numerical_hj(j, i, nx,ny ,lon0,lat0,lon_dp,r_dp, eps, order=6):
     """Returns a numerical approximation to h_phi"""
     reps = 1. / eps 
-    ds2 = great_arc_distance(j+eps, i, j-eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds2 = displaced_pole_great_arc_distance(j+eps, i, j-eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 2: return 0.5 * ds2 * reps
-    ds4 = great_arc_distance(j+2.*eps, i, j-2.*eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds4 = displaced_pole_great_arc_distance(j+2.*eps, i, j-2.*eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 4: return ( 8. * ds2 - ds4 ) * (1./12.) * reps
-    ds6 = great_arc_distance(j+3.*eps, i, j-3.*eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
+    ds6 = displaced_pole_great_arc_distance(j+3.*eps, i, j-3.*eps, i, nx,ny ,lon0,lat0,lon_dp,r_dp)
     if order == 6: return ( 45. * ds2 - 9. * ds4 + ds6 ) * (1./60.) * reps
     raise Exception('order not coded')
 
@@ -480,8 +480,8 @@ def displacedPoleCap_metrics_quad(order,nx,ny,lon0,lat0,lon_dp,r_dp,Re=_default_
         i_s = b*i + a*(i+1)
         i1d = np.append(i1d,i_s)
     #numerical approximation to h_i_in and h_j_inv at quadrature points
-    dx = numerical_hi(j1d, i1d, nx,ny ,lon0,lat0,lon_dp,r_dp, eps=1e-3, order=order)
-    dy = numerical_hj(j1d, i1d, nx,ny ,lon0,lat0,lon_dp,r_dp, eps=1e-3, order=order)
+    dx = displaced_pole_numerical_hi(j1d, i1d, nx,ny ,lon0,lat0,lon_dp,r_dp, eps=1e-3, order=order)
+    dy = displaced_pole_numerical_hj(j1d, i1d, nx,ny ,lon0,lat0,lon_dp,r_dp, eps=1e-3, order=order)
     #reshape to send for quad averaging
     dx_r = dx.reshape(ny+1,order,nx+1,order)
     dy_r = dy.reshape(ny+1,order,nx+1,order)

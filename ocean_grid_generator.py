@@ -3,6 +3,7 @@
 from __future__ import print_function
 
 import numpypi_series as np
+import numpypi_series as numpy
 #import numpy as np
 import sys, getopt
 import datetime, os, subprocess
@@ -230,8 +231,29 @@ def quad_average_2d(y):
     
     raise Exception('Uncoded order')
 
+def quad_weights(n=3):
+    """Returns vector weights pa, pb, w.
+    Weights pa and pb so that the element [xa,xb] is sampled at positions x=pa*xa+pb*xb.
+    Weights w are the weights used when summing values of positions x.
+    """
+    if n==2:
+        d = 1./2. # 1,1
+        return numpy.array([0.,1.]), numpy.array([1.,0.]), numpy.array([d,d])
+    if n==3:
+        d = 1./6. # 1/3, 4/3, 1/3
+        return numpy.array([0.,0.5,1.]), numpy.array([1.,0.5,0.]), numpy.array([d,4.*d,d])
+    if n==4:
+        d = 1. / 12. # 1/6, 5/6, 5/6, 1/6
+        r5 = 0.5 / numpy.sqrt(5.)
+        return numpy.array([0.,0.5-r5,0.5+r5,1.]), numpy.array([1.,0.5+r5,0.5-r5,0.]), numpy.array([d,5.*d,5.*d,d])
+    if n==5:
+        d = 1. / 180. # 9/10, 49/90, 64/90, 49/90, 9/90
+        r37 = 0.5 * numpy.sqrt(3./7.)
+        return numpy.array([0.,0.5-r37,0.5,0.5+r37,1.]), numpy.array([1.,0.5+r37,0.5,0.5-r37,0.]), numpy.array([9.*d,49.*d,64.*d,49.*d,9.*d])
+    raise Exception('Uncoded order')
+
 def lagrange_interp4(x,y,q):
-    """Lagrange polynomial interpolation. Retruns f(q) which f(x) passes through four data
+    """Lagrange polynomial interpolation. Returns f(q) which f(x) passes through four data
        points at x[0..3], y[0..3]."""
     # n - numerator, d - denominator
     n0 = ( q - x[1] ) * ( q - x[2] ) * ( q - x[3] )
@@ -243,6 +265,20 @@ def lagrange_interp4(x,y,q):
     n3 = ( q - x[0] ) * ( q - x[1] ) * ( q - x[2] )
     d3 = ( x[3] - x[0] ) * ( x[3] - x[1] ) * ( x[3] - x[2] )
     return ( (n0/d0)*y[0] + (n3/d3)*y[3] ) + ( (n1/d1)*y[1] + (n2/d2)*y[2] )
+
+def lagrange_interp(x, y, q):
+    """Lagrange polynomial interpolation. Returns f(q) which f(x) passes through all data
+       points at x[:], y[:]."""
+    order = len(x)
+    assert len(y)==order, "x and y mus have same number of columns"
+    result = 0. * q
+    for l in range(order):
+        accum = 1.
+        for j in range(order):
+            if j!=l:
+                accum = accum * ( ( q - x[j] ) / ( x[l] - x[j] ) )
+        result += y[l] * accum
+    return result
 
 def y_mercator(Ni, phi):
     """Equation (1)"""
@@ -500,6 +536,107 @@ def displacedPoleCap_metrics_quad(order,nx,ny,lon0,lat0,lon_dp,r_dp,Re=_default_
 
     return dxq,dyq,daq    
 
+def numerical_metrics(lon, lat, eps=1.e-4, Re=1., order=8):
+    def xyz(lon, lat):
+        d2r = numpy.pi / 180.
+        c = numpy.cos(d2r*lat)
+        return c * numpy.cos(d2r*lon), c * numpy.sin(d2r*lon), numpy.sin(d2r*lat)
+    def tp(x, y, z):
+        r = 1. / numpy.sqrt( (x*x + y*y) + z*z )
+        return numpy.arcsin(r*z), numpy.arctan2( y, x )
+    def renorm(x,y,z):
+        r = 1. / numpy.sqrt( (x*x + y*y) + z*z )
+        return r*x, r*y, r*z
+    def interpx(a, pos):
+        b = 0*a[:,1:]
+        e = 1*pos
+        if order==2:
+            # Second order (linear)
+            b[:,:] = lagrange_interp( numpy.arange(2), (a[:,:-1],a[:,1:]), e )
+            return b
+        if order==4:
+            # Fourth order (cubic)
+            b[:,1:-1] = lagrange_interp( numpy.arange(4)-1, (a[:,:-3],a[:,1:-2],a[:,2:-1],a[:,3:]), e )
+            b[:,0] = lagrange_interp( numpy.arange(4), (a[:,0],a[:,1],a[:,2],a[:,3]), e )
+            b[:,-1] = lagrange_interp( numpy.arange(4)-2, (a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            return b
+        if order==6:
+            # Sixth order (quintic)
+            b[:,2:-2] = lagrange_interp( numpy.arange(6)-2, (a[:,:-5],a[:,1:-4],a[:,2:-3],a[:,3:-2],a[:,4:-1],a[:,5:]), e )
+            b[:,1] = lagrange_interp( numpy.arange(6)-1, (a[:,0],a[:,1],a[:,2],a[:,3],a[:,4],a[:,5]), e )
+            b[:,0] = lagrange_interp( numpy.arange(6), (a[:,0],a[:,1],a[:,2],a[:,3],a[:,4],a[:,5]), e )
+            b[:,-2] = lagrange_interp( numpy.arange(6)-3, (a[:,-6],a[:,-5],a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            b[:,-1] = lagrange_interp( numpy.arange(6)-4, (a[:,-6],a[:,-5],a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            return b
+        if order==8:
+            # Eigth order
+            b[:,3:-3] = lagrange_interp( numpy.arange(8)-3, (a[:,:-7],a[:,1:-6],a[:,2:-5],a[:,3:-4],a[:,4:-3],a[:,5:-2],a[:,6:-1],a[:,7:]), e )
+            b[:,2] = lagrange_interp( numpy.arange(8)-2, (a[:,0],a[:,1],a[:,2],a[:,3],a[:,4],a[:,5],a[:,6],a[:,7]), e )
+            b[:,1] = lagrange_interp( numpy.arange(8)-1, (a[:,0],a[:,1],a[:,2],a[:,3],a[:,4],a[:,5],a[:,6],a[:,7]), e )
+            b[:,0] = lagrange_interp( numpy.arange(8), (a[:,0],a[:,1],a[:,2],a[:,3],a[:,4],a[:,5],a[:,6],a[:,7]), e )
+            b[:,-3] = lagrange_interp( numpy.arange(8)-4, (a[:,-8],a[:,-7],a[:,-6],a[:,-5],a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            b[:,-2] = lagrange_interp( numpy.arange(8)-5, (a[:,-8],a[:,-7],a[:,-6],a[:,-5],a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            b[:,-1] = lagrange_interp( numpy.arange(8)-6, (a[:,-8],a[:,-7],a[:,-6],a[:,-5],a[:,-4],a[:,-3],a[:,-2],a[:,-1]), e )
+            return b
+        raise Exception('order not coded')
+    def interpy(a, pos):
+        b = 0*a[1:,:]
+        e = 1*pos
+        if order==2:
+            # Second order (linear)
+            b[:,:] = lagrange_interp( numpy.arange(2), (a[:-1,:],a[1:,:]), e )
+            return b
+        if order==4:
+            # Fourth order (cubic)
+            b[1:-1,:] = lagrange_interp( numpy.arange(4)-1, (a[:-3,:],a[1:-2,:],a[2:-1,:],a[3:,:]), e )
+            b[0,:] = lagrange_interp( numpy.arange(4)  , (a[0,:],a[1,:],a[2,:],a[3,:]), e )
+            b[-1,:] = lagrange_interp( numpy.arange(4)-2, (a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            return b
+        if order==6:
+            # Sixth order (quintic)
+            b[2:-2,:] = lagrange_interp( numpy.arange(6)-2, (a[:-5,:],a[1:-4,:],a[2:-3,:],a[3:-2,:],a[4:-1,:],a[5:,:]), e )
+            b[1,:] = lagrange_interp( numpy.arange(6)-1, (a[0,:],a[1,:],a[2,:],a[3,:],a[4,:],a[5,:]), e )
+            b[0,:] = lagrange_interp( numpy.arange(6)  , (a[0,:],a[1,:],a[2,:],a[3,:],a[4,:],a[5,:]), e )
+            b[-2,:] = lagrange_interp( numpy.arange(6)-3, (a[-6,:],a[-5,:],a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            b[-1,:] = lagrange_interp( numpy.arange(6)-4, (a[-6,:],a[-5,:],a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            return b
+        if order==8:
+            # Eigth order
+            b[3:-3,:] = lagrange_interp( numpy.arange(8)-3, (a[:-7,:],a[1:-6,:],a[2:-5,:],a[3:-4,:],a[4:-3,:],a[5:-2,:],a[6:-1,:],a[7:,:]), e )
+            b[2,:] = lagrange_interp( numpy.arange(8)-2, (a[0,:],a[1,:],a[2,:],a[3,:],a[4,:],a[5,:],a[6,:],a[7,:]), e )
+            b[1,:] = lagrange_interp( numpy.arange(8)-1, (a[0,:],a[1,:],a[2,:],a[3,:],a[4,:],a[5,:],a[6,:],a[7,:]), e )
+            b[0,:] = lagrange_interp( numpy.arange(8)  , (a[0,:],a[1,:],a[2,:],a[3,:],a[4,:],a[5,:],a[6,:],a[7,:]), e )
+            b[-3,:] = lagrange_interp( numpy.arange(8)-4, (a[-8,:],a[-7,:],a[-6,:],a[-5,:],a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            b[-2,:] = lagrange_interp( numpy.arange(8)-5, (a[-8,:],a[-7,:],a[-6,:],a[-5,:],a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            b[-1,:] = lagrange_interp( numpy.arange(8)-6, (a[-8,:],a[-7,:],a[-6,:],a[-5,:],a[-4,:],a[-3,:],a[-2,:],a[-1,:]), e )
+            return b
+        raise Exception('order not coded')
+    def arc_xyz(x0, y0, z0, x1, y1, z1):
+        r0,r1 = 1./numpy.sqrt( ( x0*x0 + y0*y0 ) + z0*z0), 1./numpy.sqrt( ( x1*x1 + y1*y1 ) + z1*z1 )
+        cx,cy,cz = y0*z1-z0*y1, z0*x1-x0*z1, x0*y1-y0*x1
+        cp = numpy.arcsin( numpy.sqrt( ( (cx*cx+cy*cy)+cz*cz )*(r0*r1) ) )
+        return cp
+    x,y,z = xyz(lon,lat)
+    a,b,w = quad_weights(5)
+    dx,dy,area,dd = 0., 0., 0., 0.5 / eps
+    for j in range(len(a)):
+        xL,yL,zL = interpy(x, a[j]-eps), interpy(y, a[j]-eps), interpy(z, a[j]-eps)
+        xC,yC,zC = interpy(x, a[j]    ), interpy(y, a[j]    ), interpy(z, a[j]    )
+        xR,yR,zR = interpy(x, a[j]+eps), interpy(y, a[j]+eps), interpy(z, a[j]+eps)
+        for i in range(len(a)):
+            xLx,yLx,zLx = interpx(xC, a[i]-eps), interpx(yC, a[i]-eps), interpx(zC, a[i]-eps)
+            xRx,yRx,zRx = interpx(xC, a[i]+eps), interpx(yC, a[i]+eps), interpx(zC, a[i]+eps)
+            dsx = dd * arc_xyz(xLx, yLx, zLx, xRx, yRx, zRx)
+            xLx,yLx,zLx = interpx(xL, a[i]    ), interpx(yL, a[i]    ), interpx(zL, a[i]    )
+            xRx,yRx,zRx = interpx(xR, a[i]    ), interpx(yR, a[i]    ), interpx(zR, a[i]    )
+            dsy = dd * arc_xyz(xLx, yLx, zLx, xRx, yRx, zRx)
+            area += ( w[j]*w[i] ) * ( dsx * dsy )
+        dy += (w[j]*dd)*arc_xyz(xL, yL, zL, xR, yR, zR)
+        xL,yL,zL = interpx(x, a[j]-eps), interpx(y, a[j]-eps), interpx(z, a[j]-eps)
+        xR,yR,zR = interpx(x, a[j]+eps), interpx(y, a[j]+eps), interpx(z, a[j]+eps)
+        dx += (w[j]*dd)*arc_xyz(xL, yL, zL, xR, yR, zR)
+    return dx*Re, dy*Re, area*(Re*Re)
+
 def cut_below(lam,phi,lowerlat):
     nj,ni = lam.shape
     for j in range(0,nj):
@@ -630,6 +767,32 @@ def generate_grid_metrics_MIDAS(x,y,axis_units='degrees',Re=_default_Re, latlon_
             ( 0.5 * ( dx_i[1:,:] + dx_i[:-1,:] ) ) * ( sl[1:,:] - sl[:-1,:] ) )
     else:
         area = 0.25 * ( ( dx[1:,:] + dx[:-1,:] ) * ( dy[:,1:] + dy[:,:-1] ) )
+    return dx,dy,area
+
+def spherical_metrics(lon, lat, Re=1.):
+    """Returns 2D arrays for metrics dx, dy and area for a spherical grid with longitudes invairant along j
+    and latitudes invariante along i."""
+    assert len(lon.shape)==len(lat.shape), 'lon,lat must both be 1D or both be 2D arrays'
+    assert len(lon.shape)<3, 'lon,lat must be 1D or 2D arrays'
+    d2r = numpy.pi / 180.
+    if len(lon.shape)==2:
+        assert numpy.abs( lon-lon[0,:] ).sum()==0, 'lon[j,i] array is not uniform along j'
+        assert lat.shape==lon.shape, 'lon and lat must have the same shape if 2D'
+        lam = d2r*lon[0,:]
+        dlam = d2r*(lon[0,1:] - lon[0,:-1])
+    elif len(lon.shape)==1:
+        lam = d2r*lon
+        dlam = d2r*(lon[1:] - lon[:-1])
+    if len(lat.shape)==2:
+        assert numpy.abs( lat.T-lat[:,0].T ).sum()==0, 'lat[j,i] array is not uniform along i'
+        phi = d2r*lat[:,0]
+        dphi = d2r*(lat[1:,0] - lat[:-1,0])
+    elif len(lat.shape)==1:
+        phi = d2r*lat
+        dphi = d2r*(lat[1:] - lat[:-1])
+    dx = Re * numpy.tile( dlam, (phi.shape[0],1) ) * numpy.tile( numpy.cos( phi ), (lam.shape[0]-1,1)).T
+    dy = Re * numpy.tile( dphi, (lam.shape[0],1) ).T
+    area = (Re*Re) * numpy.tile( dlam, (phi.shape[0]-1,1) ) * numpy.tile( numpy.sin( phi[1:] ) - numpy.sin( phi[:-1] ), (lam.shape[0]-1,1)).T
     return dx,dy,area
 
 def angle_x(x,y):
